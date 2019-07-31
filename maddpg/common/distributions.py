@@ -38,9 +38,11 @@ class PdType(object):
         raise NotImplementedError
 
     def param_placeholder(self, prepend_shape, name=None):
-        return tf.placeholder(dtype=tf.float32, shape=prepend_shape+self.param_shape(), name=name)
+        return tf.placeholder(dtype=tf.float32,
+                              shape=prepend_shape+self.param_shape(), name=name)
     def sample_placeholder(self, prepend_shape, name=None):
-        return tf.placeholder(dtype=self.sample_dtype(), shape=prepend_shape+self.sample_shape(), name=name)
+        return tf.placeholder(dtype=self.sample_dtype(),
+                              shape=prepend_shape+self.sample_shape(), name=name)
 
 class CategoricalPdType(PdType):
     def __init__(self, ncat):
@@ -153,7 +155,8 @@ class CategoricalPd(Pd):
     def mode(self):
         return U.argmax(self.logits, axis=1)
     def logp(self, x):
-        return -tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.logits, labels=x)
+        return -tf.nn.sparse_softmax_cross_entropy_with_logits(
+            logits=self.logits, labels=x)
     def kl(self, other):
         a0 = self.logits - U.max(self.logits, axis=1, keepdims=True)
         a1 = other.logits - U.max(other.logits, axis=1, keepdims=True)
@@ -211,13 +214,19 @@ class MultiCategoricalPd(Pd):
     def __init__(self, low, high, flat):
         self.flat = flat
         self.low = tf.constant(low, dtype=tf.int32)
-        self.categoricals = list(map(CategoricalPd, tf.split(flat, high - low + 1, axis=len(flat.get_shape()) - 1)))
+        self.categoricals = list(map(CategoricalPd,
+                                     tf.split(flat, high - low + 1,
+                                              axis=len(flat.get_shape()) - 1)))
     def flatparam(self):
         return self.flat
     def mode(self):
-        return self.low + tf.cast(tf.stack([p.mode() for p in self.categoricals], axis=-1), tf.int32)
+        return self.low + tf.cast(tf.stack(
+            [p.mode() for p in self.categoricals], axis=-1), tf.int32)
     def logp(self, x):
-        return tf.add_n([p.logp(px) for p, px in zip(self.categoricals, tf.unstack(x - self.low, axis=len(x.get_shape()) - 1))])
+        return tf.add_n(
+            [p.logp(px) for p, px in zip(self.categoricals,
+                                         tf.unstack(x - self.low,
+                                                    axis=len(x.get_shape()) - 1))])
     def kl(self, other):
         return tf.add_n([
                 p.kl(q) for p, q in zip(self.categoricals, other.categoricals)
@@ -225,7 +234,8 @@ class MultiCategoricalPd(Pd):
     def entropy(self):
         return tf.add_n([p.entropy() for p in self.categoricals])
     def sample(self):
-        return self.low + tf.cast(tf.stack([p.sample() for p in self.categoricals], axis=-1), tf.int32)
+        return self.low + tf.cast(tf.stack(
+                                  [p.sample() for p in self.categoricals], axis=-1), tf.int32)
     @classmethod
     def fromflat(cls, flat):
         return cls(flat)
@@ -234,7 +244,9 @@ class SoftMultiCategoricalPd(Pd):  # doesn't work yet
     def __init__(self, low, high, flat):
         self.flat = flat
         self.low = tf.constant(low, dtype=tf.float32)
-        self.categoricals = list(map(SoftCategoricalPd, tf.split(flat, high - low + 1, axis=len(flat.get_shape()) - 1)))
+        self.categoricals = list(
+            map(SoftCategoricalPd, tf.split(flat, high - low + 1,
+                                            axis=len(flat.get_shape()) - 1)))
     def flatparam(self):
         return self.flat
     def mode(self):
@@ -243,7 +255,9 @@ class SoftMultiCategoricalPd(Pd):  # doesn't work yet
             x.append(self.low[i] + self.categoricals[i].mode())
         return tf.concat(x, axis=-1)
     def logp(self, x):
-        return tf.add_n([p.logp(px) for p, px in zip(self.categoricals, tf.unstack(x - self.low, axis=len(x.get_shape()) - 1))])
+        return tf.add_n([p.logp(px) for p, px in zip(
+            self.categoricals, tf.unstack(x - self.low,
+                                          axis=len(x.get_shape()) - 1))])
     def kl(self, other):
         return tf.add_n([
                 p.kl(q) for p, q in zip(self.categoricals, other.categoricals)
@@ -276,7 +290,9 @@ class DiagGaussianPd(Pd):
                - U.sum(self.logstd, axis=1)
     def kl(self, other):
         assert isinstance(other, DiagGaussianPd)
-        return U.sum(other.logstd - self.logstd + (tf.square(self.std) + tf.square(self.mean - other.mean)) / (2.0 * tf.square(other.std)) - 0.5, axis=1)
+        return U.sum(other.logstd - self.logstd + \
+            (tf.square(self.std) + tf.square(self.mean - other.mean)) / \
+            (2.0 * tf.square(other.std)) - 0.5, axis=1)
     def entropy(self):
         return U.sum(self.logstd + .5 * np.log(2.0 * np.pi * np.e), 1)
     def sample(self):
@@ -294,11 +310,16 @@ class BernoulliPd(Pd):
     def mode(self):
         return tf.round(self.ps)
     def logp(self, x):
-        return - U.sum(tf.nn.sigmoid_cross_entropy_with_logits(logits=self.logits, labels=tf.to_float(x)), axis=1)
+        return - U.sum(tf.nn.sigmoid_cross_entropy_with_logits(
+            logits=self.logits, labels=tf.to_float(x)), axis=1)
     def kl(self, other):
-        return U.sum(tf.nn.sigmoid_cross_entropy_with_logits(logits=other.logits, labels=self.ps), axis=1) - U.sum(tf.nn.sigmoid_cross_entropy_with_logits(logits=self.logits, labels=self.ps), axis=1)
+        return U.sum(tf.nn.sigmoid_cross_entropy_with_logits(
+            logits=other.logits, labels=self.ps), axis=1) - \
+                    U.sum(tf.nn.sigmoid_cross_entropy_with_logits(
+                        logits=self.logits, labels=self.ps), axis=1)
     def entropy(self):
-        return U.sum(tf.nn.sigmoid_cross_entropy_with_logits(logits=self.logits, labels=self.ps), axis=1)
+        return U.sum(tf.nn.sigmoid_cross_entropy_with_logits(
+            logits=self.logits, labels=self.ps), axis=1)
     def sample(self):
         p = tf.sigmoid(self.logits)
         u = tf.random_uniform(tf.shape(p))
