@@ -6,6 +6,10 @@ import maddpg.common.tf_util as U
 from maddpg.common.distributions import make_pdtype
 from maddpg import AgentTrainer
 from maddpg.trainer.replay_buffer import ReplayBuffer
+try:
+    import lvdb as pdb  # noqa
+except ImportError:
+    import ipdb as pdb
 
 
 def discount_with_dones(rewards, dones, gamma):
@@ -27,8 +31,8 @@ def make_update_exp(vals, target_vals):
     expression = tf.group(*expression)
     return U.function([], [], updates=[expression])
 
-def p_train(make_obs_ph_n, act_space_n, p_index, p_func, q_func, optimizer, 
-            grad_norm_clipping=None, local_q_func=False, num_units=64, 
+def p_train(make_obs_ph_n, act_space_n, p_index, p_func, q_func, optimizer,
+            grad_norm_clipping=None, local_q_func=False, num_units=64,
             scope="trainer", reuse=None):
     with tf.variable_scope(scope, reuse=reuse):
         # create distribtuions
@@ -41,7 +45,6 @@ def p_train(make_obs_ph_n, act_space_n, p_index, p_func, q_func, optimizer,
                     name="action"+str(i)) for i in range(len(act_space_n))]
 
         p_input = obs_ph_n[p_index]
-
         p = p_func(p_input, int(act_pdtype_n[p_index].param_shape()[0]),
                    scope="p_func", num_units=num_units)
         p_func_vars = U.scope_vars(U.absolute_scope_name("p_func"))
@@ -54,16 +57,17 @@ def p_train(make_obs_ph_n, act_space_n, p_index, p_func, q_func, optimizer,
 
         act_input_n = act_ph_n + []
         act_input_n[p_index] = act_pd.sample()
+
         q_input = tf.concat(obs_ph_n + act_input_n, 1)
         if local_q_func:
             q_input = tf.concat([obs_ph_n[p_index], act_input_n[p_index]], 1)
         q = q_func(q_input, 1, scope="q_func", reuse=True,
-                   num_units=num_units)[:,0]
+                   num_units=num_units)[:, 0]
         pg_loss = -tf.reduce_mean(q)
 
         loss = pg_loss + p_reg * 1e-3
 
-        optimize_expr = U.minimize_and_clip(optimizer, loss, p_func_vars, 
+        optimize_expr = U.minimize_and_clip(optimizer, loss, p_func_vars,
                                             grad_norm_clipping)
 
         # Create callable functions
@@ -102,29 +106,29 @@ def q_train(make_obs_ph_n, act_space_n, q_index, q_func, optimizer,
         q_input = tf.concat(obs_ph_n + act_ph_n, 1)
         if local_q_func:
             q_input = tf.concat([obs_ph_n[q_index], act_ph_n[q_index]], 1)
-        q = q_func(q_input, 1, scope="q_func", num_units=num_units)[:,0]
+        q = q_func(q_input, 1, scope="q_func", num_units=num_units)[:, 0]
         q_func_vars = U.scope_vars(U.absolute_scope_name("q_func"))
 
         q_loss = tf.reduce_mean(tf.square(q - target_ph))
 
-        # viscosity solution to Bellman differential equation in place of an 
+        # viscosity solution to Bellman differential equation in place of an
         # initial condition
         q_reg = tf.reduce_mean(tf.square(q))
-        loss = q_loss #+ 1e-3 * q_reg
+        loss = q_loss  # + 1e-3 * q_reg
 
-        optimize_expr = U.minimize_and_clip(optimizer, loss, q_func_vars, 
+        optimize_expr = U.minimize_and_clip(optimizer, loss, q_func_vars,
                                             grad_norm_clipping)
 
         # Create callable functions
-        train = U.function(inputs=obs_ph_n + act_ph_n + [target_ph], 
+        train = U.function(inputs=obs_ph_n + act_ph_n + [target_ph],
                            outputs=loss, updates=[optimize_expr])
         q_values = U.function(obs_ph_n + act_ph_n, q)
 
         # target network
         target_q = q_func(q_input, 1, scope="target_q_func",
-                          num_units=num_units)[:,0]
+                          num_units=num_units)[:, 0]
         target_q_func_vars = \
-                U.scope_vars(U.absolute_scope_name("target_q_func"))
+            U.scope_vars(U.absolute_scope_name("target_q_func"))
         update_target_q = make_update_exp(q_func_vars, target_q_func_vars)
 
         target_q_values = U.function(obs_ph_n + act_ph_n, target_q)
