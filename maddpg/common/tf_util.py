@@ -2,6 +2,10 @@ import collections
 import numpy as np
 import os
 import tensorflow as tf
+try:
+    import lvdb as pdb  # noqa
+except ImportError:
+    import ipdb as pdb
 
 def sum(x, axis=None, keepdims=False):
     return tf.reduce_sum(x, axis=None if axis is None else [axis], keep_dims = keepdims)
@@ -311,6 +315,8 @@ class _Function(object):
             self._feed_input(feed_dict, inpt, value)
         # Update the kwargs
         kwargs_passed_inpt_names = set()
+        if len(self.inputs) != len(args):
+            pdb.set_trace()
         for inpt in self.inputs[len(args):]:
             inpt_name = inpt.name.split(':')[0]
             inpt_name = inpt_name.split('/')[-1]

@@ -138,7 +138,7 @@ def q_train(make_obs_ph_n, act_space_n, q_index, q_func, optimizer,
 
 class MADDPGAgentTrainer(AgentTrainer):
     def __init__(self, name, model, obs_shape_n, act_space_n, agent_index,
-                 args, local_q_func=False):
+                 args, summary_writer=None, local_q_func=False):
         self.name = name
         self.n = len(obs_shape_n)
         self.agent_index = agent_index
@@ -174,11 +174,27 @@ class MADDPGAgentTrainer(AgentTrainer):
         )
         # Create experience buffer
         self.replay_buffer = ReplayBuffer(1e6)
-        self.max_replay_buffer_len = args.batch_size * args.max_episode_len
+        self.max_replay_buffer_len = 2
+        # self.max_replay_buffer_len = args.batch_size * args.max_episode_len
         self.replay_sample_index = None
+        self.summary_writer = summary_writer
+        if self.summary_writer is not None:
+            self.summary = tf.Summary()
+        #     if simparams['blue_algo'].lower() != 'NONE'.lower():
+        #         tf.summary.scalar('blue_reward', rew_n[0])
+        #     if simparams['red_algo'].lower() != 'NONE'.lower():
+        #         tf.summary.scalar('red_reward', rew_n[0])
+
+        self.summary_op = tf.summary.merge_all()
 
     def action(self, obs):
-        return self.act(obs[None])[0]
+        # return self.act(obs[None])[0]
+        theac = self.act(obs[None])[0]
+        if np.isnan(theac):
+            print('NaN action in MADDPGAgentTrainer')
+            pdb.set_trace()
+            print('NaN action in MADDPGAgentTrainer')
+        return theac
 
     def experience(self, obs, act, rew, new_obs, done, terminal):
         # Store transition in the replay buffer.
@@ -214,9 +230,9 @@ class MADDPGAgentTrainer(AgentTrainer):
         target_q = 0.0
         for i in range(num_sample):
             target_act_next_n = \
-                    [agents[i].p_debug['target_act'](obs_next_n[i]) for i in range(self.n)]
+                [agents[i].p_debug['target_act'](obs_next_n[i]) for i in range(self.n)]
             target_q_next = \
-                    self.q_debug['target_q_values'](*(obs_next_n + target_act_next_n))
+                self.q_debug['target_q_values'](*(obs_next_n + target_act_next_n))
             target_q += rew + self.args.gamma * (1.0 - done) * target_q_next
         target_q /= num_sample
         q_loss = self.q_train(*(obs_n + act_n + [target_q]))
@@ -226,6 +242,17 @@ class MADDPGAgentTrainer(AgentTrainer):
 
         self.p_update()
         self.q_update()
+        with tf.name_scope('summaries'):
+            tf.summary.scalar('q_loss', q_loss)
+            tf.summary.scalar('p_loss', p_loss)
+            tf.summary.scalar('target_q', target_q)
+            tf.summary.scalar('mean_target_q', np.mean(target_q))
+            tf.summary.scalar('mean_target_q_next', np.mean(target_q_next))
+            tf.summary.scalar('avg_reward', np.mean(rew))
+
+            merged = tf.summary.merge_all()
+        # self.summary_writer.add_summary(merged)
+        # self.summary_writer.flush()
 
         return [q_loss, p_loss, np.mean(target_q), np.mean(rew),
                 np.mean(target_q_next), np.std(target_q)]
