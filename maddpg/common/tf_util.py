@@ -6,6 +6,7 @@ try:
     import lvdb as pdb  # noqa
 except ImportError:
     import ipdb as pdb
+import pysnooper
 
 def sum(x, axis=None, keepdims=False):
     return tf.reduce_sum(x, axis=None if axis is None else [axis], keep_dims = keepdims)
@@ -31,14 +32,12 @@ def softmax(x, axis=None):
 # Misc
 # ================================================================
 
-
 def is_placeholder(x):
     return type(x) is tf.Tensor and len(x.op.inputs) == 0
 
 # ================================================================
 # Inputs
 # ================================================================
-
 
 class TfInput(object):
     def __init__(self, name="(unnamed)"):
@@ -290,6 +289,7 @@ def function(inputs, outputs, updates=None, givens=None):
 
 
 class _Function(object):
+    @pysnooper.snoop()
     def __init__(self, inputs, outputs, updates, givens, check_nan=False):
         for inpt in inputs:
             if not issubclass(type(inpt), TfInput):
@@ -301,12 +301,14 @@ class _Function(object):
         self.givens = {} if givens is None else givens
         self.check_nan = check_nan
 
+    @pysnooper.snoop(watch_explode=('feed_dict'))
     def _feed_input(self, feed_dict, inpt, value):
         if issubclass(type(inpt), TfInput):
             feed_dict.update(inpt.make_feed_dict(value))
         elif is_placeholder(inpt):
             feed_dict[inpt] = value
 
+    @pysnooper.snoop(watch_explode=('feed_dict'))
     def __call__(self, *args, **kwargs):
         assert len(args) <= len(self.inputs), "Too many arguments provided"
         feed_dict = {}
