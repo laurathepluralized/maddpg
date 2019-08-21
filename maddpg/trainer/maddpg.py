@@ -10,6 +10,7 @@ try:
     import lvdb as pdb  # noqa
 except ImportError:
     import ipdb as pdb
+import pysnooper
 
 
 def discount_with_dones(rewards, dones, gamma):
@@ -144,6 +145,10 @@ class MADDPGAgentTrainer(AgentTrainer):
         self.agent_index = agent_index
         self.args = args
         obs_ph_n = []
+        self.rew_sums = [[]]
+        self.summary_writer = summary_writer
+        self.p_summaries = []
+        self.q_summaries = []
         for i in range(self.n):
             obs_ph_n.append(U.BatchInput(obs_shape_n[i],
                                          name="observation"+str(i)).get())
@@ -160,6 +165,10 @@ class MADDPGAgentTrainer(AgentTrainer):
             local_q_func=local_q_func,
             num_units=args.num_units
         )
+        # with tf.variable_scope('summary'):
+        #     for k, v in self.q_debug.items():
+        #         s = tf.summary.scalar(k+'.scalar.summary', v)
+        #         self.q_summaries.append(s)
         self.act, self.p_train, self.p_update, self.p_debug = p_train(
             scope=self.name,
             make_obs_ph_n=obs_ph_n,
@@ -172,20 +181,16 @@ class MADDPGAgentTrainer(AgentTrainer):
             local_q_func=local_q_func,
             num_units=args.num_units
         )
+        # with tf.variable_scope('summary'):
+        #     for k, v in self.p_debug.items():
+        #         s = tf.summary.scalar(k+'.scalar.summary', v)
+        #         self.p_summaries.append(s)
         # Create experience buffer
         self.replay_buffer = ReplayBuffer(1e6)
-        self.max_replay_buffer_len = 2
-        # self.max_replay_buffer_len = args.batch_size * args.max_episode_len
+        # self.max_replay_buffer_len = 2  # for testing
+        self.max_replay_buffer_len = args.batch_size * args.max_episode_len
         self.replay_sample_index = None
-        self.summary_writer = summary_writer
-        if self.summary_writer is not None:
-            self.summary = tf.Summary()
-        #     if simparams['blue_algo'].lower() != 'NONE'.lower():
-        #         tf.summary.scalar('blue_reward', rew_n[0])
-        #     if simparams['red_algo'].lower() != 'NONE'.lower():
-        #         tf.summary.scalar('red_reward', rew_n[0])
-
-        self.summary_op = tf.summary.merge_all()
+        # self.summary_op = tf.summary.merge(self.p_summaries+self.q_summaries)
 
     def action(self, obs):
         # return self.act(obs[None])[0]
@@ -224,6 +229,9 @@ class MADDPGAgentTrainer(AgentTrainer):
             obs_next_n.append(obs_next)
             act_n.append(act)
         obs, act, rew, obs_next, done = self.replay_buffer.sample_index(index)
+        # if self.summary_writer is not None:
+        #     with tf.name_scope('summaries'):
+        #         tf.summary.scalar('rew_from_replay', rew)
 
         # train q network
         num_sample = 1
@@ -236,23 +244,21 @@ class MADDPGAgentTrainer(AgentTrainer):
             target_q += rew + self.args.gamma * (1.0 - done) * target_q_next
         target_q /= num_sample
         q_loss = self.q_train(*(obs_n + act_n + [target_q]))
+        # if self.summary_writer is not None:
+        #     with tf.name_scope('summaries'):
+        #         tf.summary.scalar('q_loss', q_loss)
 
         # train p network
         p_loss = self.p_train(*(obs_n + act_n))
+        # if self.summary_writer is not None:
+        #     with tf.name_scope('summaries'):
+        #         tf.summary.scalar('p_loss', p_loss)
 
         self.p_update()
         self.q_update()
-        with tf.name_scope('summaries'):
-            tf.summary.scalar('q_loss', q_loss)
-            tf.summary.scalar('p_loss', p_loss)
-            tf.summary.scalar('target_q', target_q)
-            tf.summary.scalar('mean_target_q', np.mean(target_q))
-            tf.summary.scalar('mean_target_q_next', np.mean(target_q_next))
-            tf.summary.scalar('avg_reward', np.mean(rew))
 
-            merged = tf.summary.merge_all()
-        # self.summary_writer.add_summary(merged)
-        # self.summary_writer.flush()
+        # with tf.name_scope('summaries'):
+        #     tf.summary.scalar('avg_reward', np.mean(rew))
 
         return [q_loss, p_loss, np.mean(target_q), np.mean(rew),
                 np.mean(target_q_next), np.std(target_q)]

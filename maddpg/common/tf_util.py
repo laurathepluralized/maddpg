@@ -51,11 +51,11 @@ class TfInput(object):
         """Return the tf variable(s) representing the possibly postprocessed value
         of placeholder(s).
         """
-        raise NotImplemented()
+        raise NotImplementedError
 
-    def make_feed_dict(data):
+    def make_feed_dict(self, data):
         """Given data input it to the placeholder(s)."""
-        raise NotImplemented()
+        raise NotImplementedError
 
 
 class PlacholderTfInput(TfInput):
@@ -289,7 +289,6 @@ def function(inputs, outputs, updates=None, givens=None):
 
 
 class _Function(object):
-    @pysnooper.snoop()
     def __init__(self, inputs, outputs, updates, givens, check_nan=False):
         for inpt in inputs:
             if not issubclass(type(inpt), TfInput):
@@ -301,14 +300,12 @@ class _Function(object):
         self.givens = {} if givens is None else givens
         self.check_nan = check_nan
 
-    @pysnooper.snoop(watch_explode=('feed_dict'))
     def _feed_input(self, feed_dict, inpt, value):
         if issubclass(type(inpt), TfInput):
             feed_dict.update(inpt.make_feed_dict(value))
         elif is_placeholder(inpt):
             feed_dict[inpt] = value
 
-    @pysnooper.snoop(watch_explode=('feed_dict'))
     def __call__(self, *args, **kwargs):
         assert len(args) <= len(self.inputs), "Too many arguments provided"
         feed_dict = {}
