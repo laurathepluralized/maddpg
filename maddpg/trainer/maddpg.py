@@ -187,10 +187,8 @@ class MADDPGAgentTrainer(AgentTrainer):
         #         self.p_summaries.append(s)
         # Create experience buffer
         self.replay_buffer = ReplayBuffer(1e6)
-        # self.max_replay_buffer_len = 2  # for testing
         self.max_replay_buffer_len = args.batch_size * args.max_episode_len
         self.replay_sample_index = None
-        # self.summary_op = tf.summary.merge(self.p_summaries+self.q_summaries)
 
     def action(self, obs):
         # return self.act(obs[None])[0]
