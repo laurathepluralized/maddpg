@@ -165,10 +165,11 @@ class MADDPGAgentTrainer(AgentTrainer):
             local_q_func=local_q_func,
             num_units=args.num_units
         )
-        # with tf.variable_scope('summary'):
+        # with tf.variable_scope('q_summary'):
         #     for k, v in self.q_debug.items():
         #         s = tf.summary.scalar(k+'.scalar.summary', v)
         #         self.q_summaries.append(s)
+
         self.act, self.p_train, self.p_update, self.p_debug = p_train(
             scope=self.name,
             make_obs_ph_n=obs_ph_n,
@@ -181,10 +182,11 @@ class MADDPGAgentTrainer(AgentTrainer):
             local_q_func=local_q_func,
             num_units=args.num_units
         )
-        # with tf.variable_scope('summary'):
+        # with tf.variable_scope('p_summary'):
         #     for k, v in self.p_debug.items():
         #         s = tf.summary.scalar(k+'.scalar.summary', v)
         #         self.p_summaries.append(s)
+
         # Create experience buffer
         self.replay_buffer = ReplayBuffer(1e6)
         self.max_replay_buffer_len = args.batch_size * args.max_episode_len
@@ -227,9 +229,6 @@ class MADDPGAgentTrainer(AgentTrainer):
             obs_next_n.append(obs_next)
             act_n.append(act)
         obs, act, rew, obs_next, done = self.replay_buffer.sample_index(index)
-        # if self.summary_writer is not None:
-        #     with tf.name_scope('summaries'):
-        #         tf.summary.scalar('rew_from_replay', rew)
 
         # train q network
         num_sample = 1
@@ -242,21 +241,26 @@ class MADDPGAgentTrainer(AgentTrainer):
             target_q += rew + self.args.gamma * (1.0 - done) * target_q_next
         target_q /= num_sample
         q_loss = self.q_train(*(obs_n + act_n + [target_q]))
-        # if self.summary_writer is not None:
-        #     with tf.name_scope('summaries'):
-        #         tf.summary.scalar('q_loss', q_loss)
+        if self.summary_writer is not None:
+            with tf.name_scope('q_summaries'):
+                tf.summary.scalar('q_loss', q_loss)
 
         # train p network
         p_loss = self.p_train(*(obs_n + act_n))
-        # if self.summary_writer is not None:
-        #     with tf.name_scope('summaries'):
-        #         tf.summary.scalar('p_loss', p_loss)
+        if self.summary_writer is not None:
+            with tf.name_scope('p_summaries'):
+                tf.summary.scalar('p_loss', p_loss)
 
         self.p_update()
         self.q_update()
 
-        # with tf.name_scope('summaries'):
-        #     tf.summary.scalar('avg_reward', np.mean(rew))
+        if self.summary_writer is not None:
+            with tf.name_scope('mean_target_q'):
+                tf.summary.scalar('mean_target_q', np.mean(target_q))
+                tf.summary.scalar('mean_target_q_next', np.mean(target_q_next))
+            with tf.name_scope('mean_std_rew'):
+                tf.summary.scalar('mean_rew', np.mean(rew))
+                tf.summary.scalar('std_rew', np.std(rew))
 
         return [q_loss, p_loss, np.mean(target_q), np.mean(rew),
                 np.mean(target_q_next), np.std(target_q)]
