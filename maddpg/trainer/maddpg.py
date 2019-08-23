@@ -165,10 +165,9 @@ class MADDPGAgentTrainer(AgentTrainer):
             local_q_func=local_q_func,
             num_units=args.num_units
         )
-        # with tf.variable_scope('q_summary'):
-        #     for k, v in self.q_debug.items():
-        #         s = tf.summary.scalar(k+'.scalar.summary', v)
-        #         self.q_summaries.append(s)
+        with tf.variable_scope('q_summary'):
+            for k, v in self.q_debug.items():
+                s = tf.summary.scalar(k+'.scalar.summary', v)
 
         self.act, self.p_train, self.p_update, self.p_debug = p_train(
             scope=self.name,
@@ -182,10 +181,9 @@ class MADDPGAgentTrainer(AgentTrainer):
             local_q_func=local_q_func,
             num_units=args.num_units
         )
-        # with tf.variable_scope('p_summary'):
-        #     for k, v in self.p_debug.items():
-        #         s = tf.summary.scalar(k+'.scalar.summary', v)
-        #         self.p_summaries.append(s)
+        with tf.variable_scope('p_summary'):
+            for k, v in self.p_debug.items():
+                s = tf.summary.scalar(k+'.scalar.summary', v)
 
         # Create experience buffer
         self.replay_buffer = ReplayBuffer(1e6)
@@ -242,25 +240,26 @@ class MADDPGAgentTrainer(AgentTrainer):
         target_q /= num_sample
         q_loss = self.q_train(*(obs_n + act_n + [target_q]))
         if self.summary_writer is not None:
-            with tf.name_scope('q_summaries'):
+            with tf.name_scope('summaries'):
                 tf.summary.scalar('q_loss', q_loss)
 
         # train p network
         p_loss = self.p_train(*(obs_n + act_n))
         if self.summary_writer is not None:
-            with tf.name_scope('p_summaries'):
+            with tf.name_scope('summaries'):
                 tf.summary.scalar('p_loss', p_loss)
 
         self.p_update()
         self.q_update()
 
         if self.summary_writer is not None:
-            with tf.name_scope('mean_target_q'):
+            with tf.name_scope('summaries'):
                 tf.summary.scalar('mean_target_q', np.mean(target_q))
                 tf.summary.scalar('mean_target_q_next', np.mean(target_q_next))
-            with tf.name_scope('mean_std_rew'):
+            with tf.name_scope('summaries'):
                 tf.summary.scalar('mean_rew', np.mean(rew))
                 tf.summary.scalar('std_rew', np.std(rew))
 
+        tf.summary.merge_all()
         return [q_loss, p_loss, np.mean(target_q), np.mean(rew),
                 np.mean(target_q_next), np.std(target_q)]
