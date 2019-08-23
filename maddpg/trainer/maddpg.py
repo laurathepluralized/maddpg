@@ -165,10 +165,6 @@ class MADDPGAgentTrainer(AgentTrainer):
             local_q_func=local_q_func,
             num_units=args.num_units
         )
-        with tf.variable_scope('q_summary'):
-            for k, v in self.q_debug.items():
-                s = tf.summary.scalar(k+'.scalar.summary', v)
-
         self.act, self.p_train, self.p_update, self.p_debug = p_train(
             scope=self.name,
             make_obs_ph_n=obs_ph_n,
@@ -181,9 +177,6 @@ class MADDPGAgentTrainer(AgentTrainer):
             local_q_func=local_q_func,
             num_units=args.num_units
         )
-        with tf.variable_scope('p_summary'):
-            for k, v in self.p_debug.items():
-                s = tf.summary.scalar(k+'.scalar.summary', v)
 
         # Create experience buffer
         self.replay_buffer = ReplayBuffer(1e6)
