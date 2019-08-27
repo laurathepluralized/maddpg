@@ -207,7 +207,8 @@ class MADDPGAgentTrainer():
         )
         # Create experience buffer
         self.replay_buffer = ReplayBuffer(1e6)
-        self.max_replay_buffer_len = args.batch_size * args.max_episode_len
+        # self.max_replay_buffer_len = args.batch_size * args.max_episode_len
+        self.max_replay_buffer_len = 100
         self.replay_sample_index = None
         self.summary_writer = summary_writer
 
@@ -251,6 +252,7 @@ class MADDPGAgentTrainer():
         target_q_next = self.q_debug['target_q_values'](*(obs_next_n + target_act_next_n))
         target_q += rew + self.args.gamma * (1.0 - done) * target_q_next
         q_loss, q_loss_summary = self.q_train(*(obs_n + act_n + [target_q]))
+        print('at q_loss_summary')
 
         self.summary_writer.add_summary(q_loss_summary, global_step=t)
 
@@ -258,10 +260,12 @@ class MADDPGAgentTrainer():
 
     def update_p(self, t, obs_n, target_act_next_n):
         """Update policy network."""
-        p_loss, p_summary = self.p_train(*(obs_n + target_act_next_n))
+        with pysnooper.snoop():
+            p_loss, p_summary = self.p_train(*(obs_n + target_act_next_n))
+            print('at p_loss_summary')
 
-        self.summary_writer.add_summary(p_summary, global_step=t)
-        self.p_update()
+            self.summary_writer.add_summary(p_summary, global_step=t)
+            self.p_update()
 
     def update(self, agents, t):
         # replay buffer is not large enough
@@ -291,31 +295,5 @@ class MADDPGAgentTrainer():
             [agents[i].p_debug['target_act'](obs_next_n[i]) for i in range(self.n)]
         self.update_q(t, obs_n, act_n, obs_next_n, target_act_next_n)
         self.update_p(t, obs_n, target_act_next_n)
-        # return [q_loss, p_loss, np.mean(target_q), np.mean(rew),
-        #         np.mean(target_q_next), np.std(target_q)]
-
-    # def update_q(self, t, obs_n, act_n, obs_next_n, target_act_next_n):
-    #     obs, act, rew, obs_next, done = self.replay_buffer.sample_index(self.replay_sample_index)
-    #
-    #     # train q network
-    #     num_sample = 1
-    #     target_q = 0.0
-    #         target_q_next = \
-    #             self.q_debug['target_q_values'](*(obs_next_n + target_act_next_n))
-    #         target_q += rew + self.args.gamma * (1.0 - done) * target_q_next
-    #     target_q /= num_sample
-    #     q_loss = self.q_train(*(obs_n + act_n + [target_q]))
-    #
-    #     # train p network
-    #     p_loss = self.p_train(*(obs_n + act_n))
-    #
-    #     self.p_update()  # update policy
-    #     self.q_update()  # update critic
-    #
-
-    # def update_p(self, t, obs_n, target_act_next_n):
-    #     """Update policy network."""
-    #     p_loss, p_summary = self.p_train(*(obs_n + target_act_next_n))
-    #
-    #     return [q_loss, p_loss, np.mean(target_q), np.mean(rew),
-    #             np.mean(target_q_next), np.std(target_q)]
+        # please actually write things to file, summary_writer
+        self.summary_writer.flush()
