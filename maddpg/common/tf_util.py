@@ -1,6 +1,15 @@
+#!/usr/bin/env python3.6
+# -*- coding: utf-8 -*-
+"""TF utilities for MADDPG.
+
+This code is a combination of the original OpenAI MADDPG tf_util code, my
+own modifications, and modifications made in
+https://github.com/sunshineclt/maddpg/blob/master/maddpg/common/tf_util.py,
+all of which are under the MIT license.
+"""
+import os
 import collections
 import numpy as np
-import os
 import tensorflow as tf
 try:
     import lvdb as pdb  # noqa
@@ -137,19 +146,28 @@ def huber_loss(x, delta=1.0):
 # ================================================================
 
 
-def minimize_and_clip(optimizer, objective, var_list, clip_val=10):
+def minimize_and_clip(optimizer, objective, var_list, clip_val=10,
+                      histogram_name=None):
     """Minimized `objective` using `optimizer` w.r.t. variables in
     `var_list` while ensure the norm of the gradients for each
     variable is clipped to `clip_val`
-    """    
+    """
     if clip_val is None:
         return optimizer.minimize(objective, var_list=var_list)
     else:
-        gradients = optimizer.compute_gradients(objective, var_list=var_list)
-        for i, (grad, var) in enumerate(gradients):
+        hist_summary = []
+        gradients, variables = zip(*optimizer.compute_gradients(objective, var_list))
+        gradients, _ = tf.clip_by_global_norm(gradients, clip_val)
+        for grad, variable in zip(gradients, variables):
             if grad is not None:
-                gradients[i] = (tf.clip_by_norm(grad, clip_val), var)
-        return optimizer.apply_gradients(gradients)
+                hist_summary.append(tf.summary.histogram(histogram_name + "/" + variable.name, grad))
+        hist = tf.summary.merge(hist_summary)
+        return optimizer.apply_gradients(zip(gradients, variables)), hist
+        # gradients = optimizer.compute_gradients(objective, var_list=var_list)
+        # for i, (grad, var) in enumerate(gradients):
+        #     if grad is not None:
+        #         gradients[i] = (tf.clip_by_norm(grad, clip_val), var)
+        # return optimizer.apply_gradients(gradients)
 
 
 # ================================================================
@@ -166,6 +184,8 @@ def make_session(num_cpu):
     tf_config = tf.ConfigProto(
         inter_op_parallelism_threads=num_cpu,
         intra_op_parallelism_threads=num_cpu)
+    tf_config.gpu_options.allow_growth = True
+
     return tf.Session(config=tf_config)
 
 
@@ -190,9 +210,8 @@ def initialize():
 
 
 def scope_vars(scope, trainable_only=False):
-    """
-    Get variables inside a scope
-    The scope can be specified as a string
+    """Get variables inside a scope.
+    The scope can be specified as a string.
 
     Parameters
     ----------
@@ -314,8 +333,6 @@ class _Function(object):
             self._feed_input(feed_dict, inpt, value)
         # Update the kwargs
         kwargs_passed_inpt_names = set()
-        if len(self.inputs) != len(args):
-            pdb.set_trace()
         for inpt in self.inputs[len(args):]:
             inpt_name = inpt.name.split(':')[0]
             inpt_name = inpt_name.split('/')[-1]

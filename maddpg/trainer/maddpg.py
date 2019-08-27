@@ -1,5 +1,15 @@
-import numpy as np
+#!/usr/bin/env python3.6
+# -*- coding: utf-8 -*-
+"""MADDPG algorithm.
+
+This code is a combination of the original OpenAI MADDPG code, my own
+modifications, and modifications made in
+https://github.com/sunshineclt/maddpg/blob/master/maddpg/trainer/maddpg.py
+and https://github.com/jarbus/maddpg/blob/master/maddpg/trainer/maddpg.py,
+all of which are under the MIT license.
+"""
 import random
+import numpy as np
 import tensorflow as tf
 import maddpg.common.tf_util as U
 
@@ -11,7 +21,6 @@ try:
 except ImportError:
     import ipdb as pdb
 import pysnooper
-
 
 def discount_with_dones(rewards, dones, gamma):
     discounted = []
@@ -35,6 +44,7 @@ def make_update_exp(vals, target_vals):
 def p_train(make_obs_ph_n, act_space_n, p_index, p_func, q_func, optimizer,
             grad_norm_clipping=None, local_q_func=False, num_units=64,
             scope="trainer", reuse=None):
+    """Train the policy."""
     with tf.variable_scope(scope, reuse=reuse):
         # create distribtuions
         act_pdtype_n = [make_pdtype(act_space) for act_space in act_space_n]
@@ -65,17 +75,24 @@ def p_train(make_obs_ph_n, act_space_n, p_index, p_func, q_func, optimizer,
         q = q_func(q_input, 1, scope="q_func", reuse=True,
                    num_units=num_units)[:, 0]
         pg_loss = -tf.reduce_mean(q)
+        p_loss_summary = tf.summary.scalar('p_loss', pg_loss)
+        p_cov_summary = tf.summary.scalar('p_cov', tf.reduce_mean(tf.square(act_pd.std)))
 
         loss = pg_loss + p_reg * 1e-3
 
-        optimize_expr = U.minimize_and_clip(optimizer, loss, p_func_vars,
-                                            grad_norm_clipping)
+        optimize_expr, hist = U.minimize_and_clip(optimizer, loss, p_func_vars,
+                                                  grad_norm_clipping,
+                                                  histogram_name='p_gradient')
+
+        p_loss_summary_merge = tf.summary.merge([p_loss_summary, p_cov_summary, hist])
 
         # Create callable functions
-        train = U.function(inputs=obs_ph_n + act_ph_n, outputs=loss,
+        train = U.function(inputs=obs_ph_n + act_ph_n,
+                           outputs=[loss, p_loss_summary_merge],
                            updates=[optimize_expr])
         act = U.function(inputs=[obs_ph_n[p_index]], outputs=act_sample)
-        p_values = U.function([obs_ph_n[p_index]], p)
+        p_values = U.function([obs_ph_n[p_index]],
+                              [act_pd.mean, act_pd.logstd])
 
         # target network
         target_p = p_func(p_input, int(act_pdtype_n[p_index].param_shape()[0]),
@@ -94,6 +111,7 @@ def p_train(make_obs_ph_n, act_space_n, p_index, p_func, q_func, optimizer,
 def q_train(make_obs_ph_n, act_space_n, q_index, q_func, optimizer,
             grad_norm_clipping=None, local_q_func=False, scope="trainer",
             reuse=None, num_units=64):
+    """Train the critic."""
     with tf.variable_scope(scope, reuse=reuse):
         # create distribtuions
         act_pdtype_n = [make_pdtype(act_space) for act_space in act_space_n]
@@ -110,19 +128,26 @@ def q_train(make_obs_ph_n, act_space_n, q_index, q_func, optimizer,
         q = q_func(q_input, 1, scope="q_func", num_units=num_units)[:, 0]
         q_func_vars = U.scope_vars(U.absolute_scope_name("q_func"))
 
-        q_loss = tf.reduce_mean(tf.square(q - target_ph))
+        # q_loss = tf.reduce_mean(tf.square(q - target_ph))
+        q_loss = tf.reduce_mean(U.huber_loss(q - target_ph))
 
         # viscosity solution to Bellman differential equation in place of an
         # initial condition
         q_reg = tf.reduce_mean(tf.square(q))
         loss = q_loss  # + 1e-3 * q_reg
+        q_loss_summary = tf.summary.scalar('q_loss', loss)
 
-        optimize_expr = U.minimize_and_clip(optimizer, loss, q_func_vars,
-                                            grad_norm_clipping)
+        optimize_expr, hist = U.minimize_and_clip(optimizer, loss,
+                                                  q_func_vars,
+                                                  grad_norm_clipping,
+                                                  histogram_name='q_gradient')
+
+        q_train_summary_merge = tf.summary.merge([q_loss_summary, hist])
 
         # Create callable functions
         train = U.function(inputs=obs_ph_n + act_ph_n + [target_ph],
-                           outputs=loss, updates=[optimize_expr])
+                           outputs=[loss, q_train_summary_merge],
+                           updates=[optimize_expr])
         q_values = U.function(obs_ph_n + act_ph_n, q)
 
         # target network
@@ -137,21 +162,24 @@ def q_train(make_obs_ph_n, act_space_n, q_index, q_func, optimizer,
         return train, update_target_q, {'q_values': q_values,
                                         'target_q_values': target_q_values}
 
-class MADDPGAgentTrainer(AgentTrainer):
-    def __init__(self, name, model, obs_shape_n, act_space_n, agent_index,
-                 args, summary_writer=None, local_q_func=False):
+class MADDPGAgentTrainer():
+    """Train MADDPG Agent.
+
+    The vast majority of the modifications to this class (as well as other
+    parts of this file) are drawn from
+    https://github.com/sunshineclt/maddpg/blob/master/maddpg/trainer/maddpg.py.
+    """
+    def __init__(self, name, model_value, model_policy, obs_shape_n,
+                 act_space_n, agent_index, args, summary_writer,
+                 local_q_func=False):
         self.name = name
         self.n = len(obs_shape_n)
         self.agent_index = agent_index
         self.args = args
         obs_ph_n = []
-        self.rew_sums = [[]]
-        self.summary_writer = summary_writer
-        self.p_summaries = []
-        self.q_summaries = []
         for i in range(self.n):
             obs_ph_n.append(U.BatchInput(obs_shape_n[i],
-                                         name="observation"+str(i)).get())
+                            name="observation" + str(i)).get())
 
         # Create all the functions necessary to train the model
         self.q_train, self.q_update, self.q_debug = q_train(
@@ -159,9 +187,9 @@ class MADDPGAgentTrainer(AgentTrainer):
             make_obs_ph_n=obs_ph_n,
             act_space_n=act_space_n,
             q_index=agent_index,
-            q_func=model,
+            q_func=model_value,
             optimizer=tf.train.AdamOptimizer(learning_rate=args.lr),
-            grad_norm_clipping=0.5,
+            grad_norm_clipping=5,
             local_q_func=local_q_func,
             num_units=args.num_units
         )
@@ -170,22 +198,24 @@ class MADDPGAgentTrainer(AgentTrainer):
             make_obs_ph_n=obs_ph_n,
             act_space_n=act_space_n,
             p_index=agent_index,
-            p_func=model,
-            q_func=model,
+            p_func=model_policy,
+            q_func=model_value,
             optimizer=tf.train.AdamOptimizer(learning_rate=args.lr),
-            grad_norm_clipping=0.5,
+            grad_norm_clipping=5,
             local_q_func=local_q_func,
             num_units=args.num_units
         )
-
         # Create experience buffer
         self.replay_buffer = ReplayBuffer(1e6)
         self.max_replay_buffer_len = args.batch_size * args.max_episode_len
         self.replay_sample_index = None
+        self.summary_writer = summary_writer
 
     def action(self, obs):
         # return self.act(obs[None])[0]
         theac = self.act(obs[None])[0]
+        # print("p", self.p_debug["p_values"](obs[None])[0])
+        # print("act", self.act(obs[None])[0])
         if np.isnan(theac):
             print('NaN action in MADDPGAgentTrainer')
             pdb.set_trace()
@@ -198,6 +228,40 @@ class MADDPGAgentTrainer(AgentTrainer):
 
     def preupdate(self):
         self.replay_sample_index = None
+
+    def set_memory_index(self, replay_sample_index):
+        self.replay_sample_index = replay_sample_index
+
+    def get_memory_index(self, batch_size):
+        return self.replay_buffer.make_index(batch_size)
+
+    def get_replay_data(self):
+        return self.replay_buffer.sample_index(self.replay_sample_index)
+
+    def get_target_act(self, obs):
+        return self.p_debug['target_act'](obs[self.agent_index])
+
+    def update_q(self, t, obs_n, act_n, obs_next_n, target_act_next_n):
+        """Update critic network."""
+        obs, act, rew, obs_next, done = self.replay_buffer.sample_index(
+            self.replay_sample_index)
+
+        # train q network
+        target_q = 0.0
+        target_q_next = self.q_debug['target_q_values'](*(obs_next_n + target_act_next_n))
+        target_q += rew + self.args.gamma * (1.0 - done) * target_q_next
+        q_loss, q_loss_summary = self.q_train(*(obs_n + act_n + [target_q]))
+
+        self.summary_writer.add_summary(q_loss_summary, global_step=t)
+
+        self.q_update()  # update critic
+
+    def update_p(self, t, obs_n, target_act_next_n):
+        """Update policy network."""
+        p_loss, p_summary = self.p_train(*(obs_n + target_act_next_n))
+
+        self.summary_writer.add_summary(p_summary, global_step=t)
+        self.p_update()
 
     def update(self, agents, t):
         # replay buffer is not large enough
@@ -221,38 +285,37 @@ class MADDPGAgentTrainer(AgentTrainer):
             act_n.append(act)
         obs, act, rew, obs_next, done = self.replay_buffer.sample_index(index)
 
-        # train q network
-        num_sample = 1
-        target_q = 0.0
-        for i in range(num_sample):
-            target_act_next_n = \
-                [agents[i].p_debug['target_act'](obs_next_n[i]) for i in range(self.n)]
-            target_q_next = \
-                self.q_debug['target_q_values'](*(obs_next_n + target_act_next_n))
-            target_q += rew + self.args.gamma * (1.0 - done) * target_q_next
-        target_q /= num_sample
-        q_loss = self.q_train(*(obs_n + act_n + [target_q]))
-        if self.summary_writer is not None:
-            with tf.name_scope('summaries'):
-                tf.summary.scalar('q_loss', q_loss)
+        # num_sample = 1
+        # for i in range(num_sample):
+        target_act_next_n = \
+            [agents[i].p_debug['target_act'](obs_next_n[i]) for i in range(self.n)]
+        self.update_q(t, obs_n, act_n, obs_next_n, target_act_next_n)
+        self.update_p(t, obs_n, target_act_next_n)
+        # return [q_loss, p_loss, np.mean(target_q), np.mean(rew),
+        #         np.mean(target_q_next), np.std(target_q)]
 
-        # train p network
-        p_loss = self.p_train(*(obs_n + act_n))
-        if self.summary_writer is not None:
-            with tf.name_scope('summaries'):
-                tf.summary.scalar('p_loss', p_loss)
+    # def update_q(self, t, obs_n, act_n, obs_next_n, target_act_next_n):
+    #     obs, act, rew, obs_next, done = self.replay_buffer.sample_index(self.replay_sample_index)
+    #
+    #     # train q network
+    #     num_sample = 1
+    #     target_q = 0.0
+    #         target_q_next = \
+    #             self.q_debug['target_q_values'](*(obs_next_n + target_act_next_n))
+    #         target_q += rew + self.args.gamma * (1.0 - done) * target_q_next
+    #     target_q /= num_sample
+    #     q_loss = self.q_train(*(obs_n + act_n + [target_q]))
+    #
+    #     # train p network
+    #     p_loss = self.p_train(*(obs_n + act_n))
+    #
+    #     self.p_update()  # update policy
+    #     self.q_update()  # update critic
+    #
 
-        self.p_update()
-        self.q_update()
-
-        if self.summary_writer is not None:
-            with tf.name_scope('summaries'):
-                tf.summary.scalar('mean_target_q', np.mean(target_q))
-                tf.summary.scalar('mean_target_q_next', np.mean(target_q_next))
-            with tf.name_scope('summaries'):
-                tf.summary.scalar('mean_rew', np.mean(rew))
-                tf.summary.scalar('std_rew', np.std(rew))
-
-        tf.summary.merge_all()
-        return [q_loss, p_loss, np.mean(target_q), np.mean(rew),
-                np.mean(target_q_next), np.std(target_q)]
+    # def update_p(self, t, obs_n, target_act_next_n):
+    #     """Update policy network."""
+    #     p_loss, p_summary = self.p_train(*(obs_n + target_act_next_n))
+    #
+    #     return [q_loss, p_loss, np.mean(target_q), np.mean(rew),
+    #             np.mean(target_q_next), np.std(target_q)]
