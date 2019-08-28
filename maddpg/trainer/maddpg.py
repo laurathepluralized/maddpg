@@ -20,7 +20,6 @@ try:
     import lvdb as pdb  # noqa
 except ImportError:
     import ipdb as pdb
-import pysnooper
 
 def discount_with_dones(rewards, dones, gamma):
     discounted = []
@@ -252,7 +251,6 @@ class MADDPGAgentTrainer():
         target_q_next = self.q_debug['target_q_values'](*(obs_next_n + target_act_next_n))
         target_q += rew + self.args.gamma * (1.0 - done) * target_q_next
         q_loss, q_loss_summary = self.q_train(*(obs_n + act_n + [target_q]))
-        print('at q_loss_summary')
 
         self.summary_writer.add_summary(q_loss_summary, global_step=t)
 
@@ -260,12 +258,10 @@ class MADDPGAgentTrainer():
 
     def update_p(self, t, obs_n, target_act_next_n):
         """Update policy network."""
-        with pysnooper.snoop():
-            p_loss, p_summary = self.p_train(*(obs_n + target_act_next_n))
-            print('at p_loss_summary')
+        p_loss, p_summary = self.p_train(*(obs_n + target_act_next_n))
 
-            self.summary_writer.add_summary(p_summary, global_step=t)
-            self.p_update()
+        self.summary_writer.add_summary(p_summary, global_step=t)
+        self.p_update()
 
     def update(self, agents, t):
         # replay buffer is not large enough
