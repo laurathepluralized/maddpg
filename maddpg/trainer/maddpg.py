@@ -20,6 +20,7 @@ try:
     import lvdb as pdb  # noqa
 except ImportError:
     import ipdb as pdb
+import pysnooper
 
 def discount_with_dones(rewards, dones, gamma):
     discounted = []
@@ -181,6 +182,8 @@ class MADDPGAgentTrainer():
                             name="observation" + str(i)).get())
 
         # Create all the functions necessary to train the model
+
+        # train critic
         self.q_train, self.q_update, self.q_debug = q_train(
             scope=self.name,
             make_obs_ph_n=obs_ph_n,
@@ -192,6 +195,8 @@ class MADDPGAgentTrainer():
             local_q_func=local_q_func,
             num_units=args.num_units
         )
+
+        # train policy
         self.act, self.p_train, self.p_update, self.p_debug = p_train(
             scope=self.name,
             make_obs_ph_n=obs_ph_n,
@@ -239,6 +244,7 @@ class MADDPGAgentTrainer():
         return self.replay_buffer.sample_index(self.replay_sample_index)
 
     def get_target_act(self, obs):
+        pdb.set_trace()
         return self.p_debug['target_act'](obs[self.agent_index])
 
     def update_q(self, t, obs_n, act_n, obs_next_n, target_act_next_n):
