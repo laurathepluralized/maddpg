@@ -75,17 +75,16 @@ def p_train(make_obs_ph_n, act_space_n, p_index, p_func, q_func, optimizer,
         q = q_func(q_input, 1, scope="q_func", reuse=True,
                    num_units=num_units)[:, 0]
         pg_loss = -tf.reduce_mean(q)
-        loss = pg_loss + p_reg  # * 1e-3
-        p_loss_summary = tf.summary.scalar('p_loss', loss)
-        # p_cov_summary = tf.summary.scalar('p_cov', tf.reduce_mean(tf.square(act_pd.std)))
+        loss = pg_loss + p_reg * 1e-3
+        p_loss_summary = tf.summary.scalar('p_loss', pg_loss)
+        p_cov_summary = tf.summary.scalar('p_cov', tf.reduce_mean(tf.square(act_pd.std)))
 
 
         optimize_expr, hist = U.minimize_and_clip(optimizer, loss, p_func_vars,
                                                   grad_norm_clipping,
                                                   histogram_name='p_gradient')
 
-        # p_loss_summary_merge = tf.summary.merge([p_loss_summary, p_cov_summary, hist])
-        p_loss_summary_merge = tf.summary.merge([p_loss_summary, hist])
+        p_loss_summary_merge = tf.summary.merge([p_loss_summary, p_cov_summary, hist])
 
         # Create callable functions
         train = U.function(inputs=obs_ph_n + act_ph_n,
