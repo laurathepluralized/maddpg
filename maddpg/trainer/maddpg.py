@@ -44,7 +44,7 @@ def make_update_exp(vals, target_vals):
 def p_train(make_obs_ph_n, act_space_n, p_index, p_func, q_func, optimizer,
             grad_norm_clipping=None, local_q_func=False, num_units=64,
             scope="trainer", reuse=None):
-    """Train the policy."""
+    """Train the agent's policy."""
     with tf.variable_scope(scope, reuse=reuse):
         # create distribtuions
         act_pdtype_n = [make_pdtype(act_space) for act_space in act_space_n]
@@ -56,12 +56,12 @@ def p_train(make_obs_ph_n, act_space_n, p_index, p_func, q_func, optimizer,
                     name="action"+str(i)) for i in range(len(act_space_n))]
 
         p_input = obs_ph_n[p_index]
-        p = p_func(p_input, int(act_pdtype_n[p_index].param_shape()[0]),
+        pfunc = p_func(p_input, int(act_pdtype_n[p_index].param_shape()[0]),
                    scope="p_func", num_units=num_units)
         p_func_vars = U.scope_vars(U.absolute_scope_name("p_func"))
 
         # wrap parameters in distribution
-        act_pd = act_pdtype_n[p_index].pdfromflat(p)
+        act_pd = act_pdtype_n[p_index].pdfromflat(pfunc)
 
         act_sample = act_pd.sample()
         p_reg = tf.reduce_mean(tf.square(act_pd.flatparam()))
@@ -72,13 +72,12 @@ def p_train(make_obs_ph_n, act_space_n, p_index, p_func, q_func, optimizer,
         q_input = tf.concat(obs_ph_n + act_input_n, 1)
         if local_q_func:
             q_input = tf.concat([obs_ph_n[p_index], act_input_n[p_index]], 1)
-        q = q_func(q_input, 1, scope="q_func", reuse=True,
+        qfunc = q_func(q_input, 1, scope="q_func", reuse=True,
                    num_units=num_units)[:, 0]
-        pg_loss = -tf.reduce_mean(q)
+        pg_loss = -tf.reduce_mean(qfunc)
         loss = pg_loss + p_reg * 1e-3
         p_loss_summary = tf.summary.scalar('p_loss', pg_loss)
         p_cov_summary = tf.summary.scalar('p_cov', tf.reduce_mean(tf.square(act_pd.std)))
-
 
         optimize_expr, hist = U.minimize_and_clip(optimizer, loss, p_func_vars,
                                                   grad_norm_clipping,
@@ -111,7 +110,7 @@ def p_train(make_obs_ph_n, act_space_n, p_index, p_func, q_func, optimizer,
 def q_train(make_obs_ph_n, act_space_n, q_index, q_func, optimizer,
             grad_norm_clipping=None, local_q_func=False, scope="trainer",
             reuse=None, num_units=64):
-    """Train the critic."""
+    """Train the agent's critic."""
     with tf.variable_scope(scope, reuse=reuse):
         # create distribtuions
         act_pdtype_n = [make_pdtype(act_space) for act_space in act_space_n]
@@ -125,15 +124,16 @@ def q_train(make_obs_ph_n, act_space_n, q_index, q_func, optimizer,
         q_input = tf.concat(obs_ph_n + act_ph_n, 1)
         if local_q_func:
             q_input = tf.concat([obs_ph_n[q_index], act_ph_n[q_index]], 1)
-        q = q_func(q_input, 1, scope="q_func", num_units=num_units)[:, 0]
+        qfunc = q_func(q_input, 1, scope="q_func", num_units=num_units)[:, 0]
         q_func_vars = U.scope_vars(U.absolute_scope_name("q_func"))
+        pdb.set_trace()
 
-        # q_loss = tf.reduce_mean(tf.square(q - target_ph))
-        q_loss = tf.reduce_mean(U.huber_loss(q - target_ph))
+        # q_loss = tf.reduce_mean(tf.square(qfunc - target_ph))
+        q_loss = tf.reduce_mean(U.huber_loss(qfunc - target_ph))
 
         # viscosity solution to Bellman differential equation in place of an
         # initial condition
-        q_reg = tf.reduce_mean(tf.square(q))
+        q_reg = tf.reduce_mean(tf.square(qfunc))
         loss = q_loss  # + 1e-3 * q_reg
         q_loss_summary = tf.summary.scalar('q_loss', loss)
 
@@ -148,7 +148,7 @@ def q_train(make_obs_ph_n, act_space_n, q_index, q_func, optimizer,
         train = U.function(inputs=obs_ph_n + act_ph_n + [target_ph],
                            outputs=[loss, q_train_summary_merge],
                            updates=[optimize_expr])
-        q_values = U.function(obs_ph_n + act_ph_n, q)
+        q_values = U.function(obs_ph_n + act_ph_n, qfunc)
 
         # target network
         target_q = q_func(q_input, 1, scope="target_q_func",
@@ -244,7 +244,6 @@ class MADDPGAgentTrainer():
         return self.replay_buffer.sample_index(self.replay_sample_index)
 
     def get_target_act(self, obs):
-        pdb.set_trace()
         return self.p_debug['target_act'](obs[self.agent_index])
 
     def update_q(self, t, obs_n, act_n, obs_next_n, target_act_next_n):
