@@ -126,7 +126,6 @@ def q_train(make_obs_ph_n, act_space_n, q_index, q_func, optimizer,
             q_input = tf.concat([obs_ph_n[q_index], act_ph_n[q_index]], 1)
         qfunc = q_func(q_input, 1, scope="q_func", num_units=num_units)[:, 0]
         q_func_vars = U.scope_vars(U.absolute_scope_name("q_func"))
-        pdb.set_trace()
 
         # q_loss = tf.reduce_mean(tf.square(qfunc - target_ph))
         q_loss = tf.reduce_mean(U.huber_loss(qfunc - target_ph))
@@ -210,9 +209,10 @@ class MADDPGAgentTrainer():
             num_units=args.num_units
         )
         # Create experience buffer
-        self.replay_buffer = ReplayBuffer(1e6)
-        # self.max_replay_buffer_len = args.batch_size * args.max_episode_len
-        self.max_replay_buffer_len = 100
+        # self.replay_buffer = ReplayBuffer(1e6)
+        self.replay_buffer = ReplayBuffer(1e4)
+        self.max_replay_buffer_len = args.batch_size * args.max_episode_len
+        # self.max_replay_buffer_len = 100
         self.replay_sample_index = None
         self.summary_writer = summary_writer
 
@@ -271,9 +271,9 @@ class MADDPGAgentTrainer():
     def update(self, agents, t):
         # replay buffer is not large enough
         if len(self.replay_buffer) < self.max_replay_buffer_len:
-            return
+            return False
         if not t % 100 == 0:  # only update every 100 steps
-            return
+            return False
 
         self.replay_sample_index = \
                 self.replay_buffer.make_index(self.args.batch_size)
@@ -298,3 +298,4 @@ class MADDPGAgentTrainer():
         self.update_p(t, obs_n, target_act_next_n)
         # please actually write things to file, summary_writer
         self.summary_writer.flush()
+        return True
