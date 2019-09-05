@@ -20,7 +20,6 @@ try:
     import lvdb as pdb  # noqa
 except ImportError:
     import ipdb as pdb
-import pysnooper
 
 def discount_with_dones(rewards, dones, gamma):
     discounted = []
@@ -169,7 +168,7 @@ class MADDPGAgentTrainer():
     https://github.com/sunshineclt/maddpg/blob/master/maddpg/trainer/maddpg.py.
     """
     def __init__(self, name, model_value, model_policy, obs_shape_n,
-                 act_space_n, agent_index, args, summary_writer,
+                 act_space_n, agent_index, args, hparams, summary_writer,
                  local_q_func=False):
         self.name = name
         self.n = len(obs_shape_n)
@@ -189,7 +188,7 @@ class MADDPGAgentTrainer():
             act_space_n=act_space_n,
             q_index=agent_index,
             q_func=model_value,
-            optimizer=tf.train.AdamOptimizer(learning_rate=args.lr),
+            optimizer=tf.train.AdamOptimizer(learning_rate=hparams['learning_rate']),
             grad_norm_clipping=5,
             local_q_func=local_q_func,
             num_units=args.num_units
@@ -203,7 +202,7 @@ class MADDPGAgentTrainer():
             p_index=agent_index,
             p_func=model_policy,
             q_func=model_value,
-            optimizer=tf.train.AdamOptimizer(learning_rate=args.lr),
+            optimizer=tf.train.AdamOptimizer(learning_rate=hparams['learning_rate']),
             grad_norm_clipping=5,
             local_q_func=local_q_func,
             num_units=args.num_units
@@ -212,7 +211,7 @@ class MADDPGAgentTrainer():
         # self.replay_buffer = ReplayBuffer(1e6)
         self.replay_buffer = ReplayBuffer(1e4)
         self.max_replay_buffer_len = args.batch_size * args.max_episode_len
-        # self.max_replay_buffer_len = 100
+        # self.max_replay_buffer_len = 10000
         self.replay_sample_index = None
         self.summary_writer = summary_writer
 
