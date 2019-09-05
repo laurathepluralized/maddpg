@@ -72,17 +72,21 @@ def p_train(make_obs_ph_n, act_space_n, p_index, p_func, q_func, optimizer,
         if local_q_func:
             q_input = tf.concat([obs_ph_n[p_index], act_input_n[p_index]], 1)
         qfunc = q_func(q_input, 1, scope="q_func", reuse=True,
-                   num_units=num_units)[:, 0]
+                       num_units=num_units)[:, 0]
         pg_loss = -tf.reduce_mean(qfunc)
         loss = pg_loss + p_reg * 1e-3
-        p_loss_summary = tf.summary.scalar('p_loss', pg_loss)
+
+        maximize_j_summary = tf.summary.scalar('pg_loss', pg_loss)
+        p_loss_summary = tf.summary.scalar('p_loss', pg_loss + p_reg)
         p_cov_summary = tf.summary.scalar('p_cov', tf.reduce_mean(tf.square(act_pd.std)))
 
         optimize_expr, hist = U.minimize_and_clip(optimizer, loss, p_func_vars,
                                                   grad_norm_clipping,
                                                   histogram_name='p_gradient')
 
-        p_loss_summary_merge = tf.summary.merge([p_loss_summary, p_cov_summary, hist])
+        p_loss_summary_merge = \
+            tf.summary.merge([maximize_j_summary, p_loss_summary,
+                              p_cov_summary, hist])
 
         # Create callable functions
         train = U.function(inputs=obs_ph_n + act_ph_n,
@@ -174,6 +178,7 @@ class MADDPGAgentTrainer():
         self.n = len(obs_shape_n)
         self.agent_index = agent_index
         self.args = args
+        self.hparams = hparams
         obs_ph_n = []
         for i in range(self.n):
             obs_ph_n.append(U.BatchInput(obs_shape_n[i],
@@ -189,7 +194,7 @@ class MADDPGAgentTrainer():
             q_index=agent_index,
             q_func=model_value,
             optimizer=tf.train.AdamOptimizer(learning_rate=hparams['learning_rate']),
-            grad_norm_clipping=5,
+            grad_norm_clipping=hparams['grad_norm_clipping'],
             local_q_func=local_q_func,
             num_units=args.num_units
         )
@@ -203,14 +208,13 @@ class MADDPGAgentTrainer():
             p_func=model_policy,
             q_func=model_value,
             optimizer=tf.train.AdamOptimizer(learning_rate=hparams['learning_rate']),
-            grad_norm_clipping=5,
+            grad_norm_clipping=hparams['grad_norm_clipping'],
             local_q_func=local_q_func,
             num_units=args.num_units
         )
         # Create experience buffer
-        # self.replay_buffer = ReplayBuffer(1e6)
-        self.replay_buffer = ReplayBuffer(1e4)
-        self.max_replay_buffer_len = args.batch_size * args.max_episode_len
+        self.replay_buffer = ReplayBuffer(hparams['replay_buffer_len'])
+        self.max_replay_buffer_len = hparams['batch_size'] * args.max_episode_len
         # self.max_replay_buffer_len = 10000
         self.replay_sample_index = None
         self.summary_writer = summary_writer
@@ -253,11 +257,10 @@ class MADDPGAgentTrainer():
         # train q network
         target_q = 0.0
         target_q_next = self.q_debug['target_q_values'](*(obs_next_n + target_act_next_n))
-        target_q += rew + self.args.gamma * (1.0 - done) * target_q_next
+        target_q += rew + self.hparams['gamma'] * (1.0 - done) * target_q_next
         q_loss, q_loss_summary = self.q_train(*(obs_n + act_n + [target_q]))
 
         self.summary_writer.add_summary(q_loss_summary, global_step=t)
-
         self.q_update()  # update critic
 
     def update_p(self, t, obs_n, target_act_next_n):
@@ -267,7 +270,8 @@ class MADDPGAgentTrainer():
         self.summary_writer.add_summary(p_summary, global_step=t)
         self.p_update()
 
-    def update(self, agents, t):
+    def update(self, agents, t, savestuff):
+        """Pull from replay buffer and update policy and critic."""
         # replay buffer is not large enough
         if len(self.replay_buffer) < self.max_replay_buffer_len:
             return False
@@ -275,7 +279,7 @@ class MADDPGAgentTrainer():
             return False
 
         self.replay_sample_index = \
-                self.replay_buffer.make_index(self.args.batch_size)
+            self.replay_buffer.make_index(self.hparams['batch_size'])
         # collect replay sample from all agents
         obs_n = []
         obs_next_n = []
@@ -289,12 +293,24 @@ class MADDPGAgentTrainer():
             act_n.append(act)
         obs, act, rew, obs_next, done = self.replay_buffer.sample_index(index)
 
-        # num_sample = 1
-        # for i in range(num_sample):
-        target_act_next_n = \
-            [agents[i].p_debug['target_act'](obs_next_n[i]) for i in range(self.n)]
-        self.update_q(t, obs_n, act_n, obs_next_n, target_act_next_n)
-        self.update_p(t, obs_n, target_act_next_n)
+        num_sample = 1
+        target_q = 0.0
+        for i in range(num_sample):
+            target_act_next_n = \
+                [agents[i].p_debug['target_act'](obs_next_n[i]) for i in range(self.n)]
+            target_q_next = self.q_debug['target_q_values'](*(obs_next_n + target_act_next_n))
+            target_q += rew + self.hparams['gamma'] * (1.0 - done) * target_q_next
+        target_q /= num_sample
+        q_loss, q_loss_summary = self.q_train(*(obs_n + act_n + [target_q]))
+        p_loss, p_summary = self.p_train(*(obs_n + act_n))
+
+        if savestuff:
+            self.summary_writer.add_summary(p_summary, global_step=t)
+            self.summary_writer.add_summary(q_loss_summary, global_step=t)
+        self.p_update()  # update policy
+        self.q_update()  # update critic
+        # self.update_q(t, obs_n, act_n, obs_next_n, target_act_next_n)
+        # self.update_p(t, obs_n, target_act_next_n)
         # please actually write things to file, summary_writer
         self.summary_writer.flush()
         return True
