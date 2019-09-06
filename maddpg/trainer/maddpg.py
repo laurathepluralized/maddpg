@@ -21,10 +21,10 @@ try:
 except ImportError:
     import ipdb as pdb
 
-def discount_with_dones(rewards, dones, gamma):
+def discount_with_dones(reward, dones, gamma):
     discounted = []
     r = 0
-    for reward, done in zip(rewards[::-1], dones[::-1]):
+    for reward, done in zip(reward[::-1], dones[::-1]):
         r = reward + gamma*r
         r = r*(1.-done)
         discounted.append(r)
@@ -56,7 +56,7 @@ def p_train(make_obs_ph_n, act_space_n, p_index, p_func, q_func, optimizer,
 
         p_input = obs_ph_n[p_index]
         pfunc = p_func(p_input, int(act_pdtype_n[p_index].param_shape()[0]),
-                   scope="p_func", num_units=num_units)
+                       scope="p_func", num_units=num_units)
         p_func_vars = U.scope_vars(U.absolute_scope_name("p_func"))
 
         # wrap parameters in distribution
@@ -210,12 +210,15 @@ class MADDPGAgentTrainer():
             optimizer=tf.train.AdamOptimizer(learning_rate=hparams['learning_rate']),
             grad_norm_clipping=hparams['grad_norm_clipping'],
             local_q_func=local_q_func,
-            num_units=args.num_units
+            num_units=args.num_units,
         )
         # Create experience buffer
         self.replay_buffer = ReplayBuffer(hparams['replay_buffer_len'])
-        self.max_replay_buffer_len = hparams['batch_size'] * args.max_episode_len
-        # self.max_replay_buffer_len = 10000
+        try:
+            if hparams['test_saving']:
+                self.max_replay_buffer_len = 100
+        except KeyError:
+            self.max_replay_buffer_len = hparams['batch_size'] * args.max_episode_len
         self.replay_sample_index = None
         self.summary_writer = summary_writer
 
@@ -249,34 +252,13 @@ class MADDPGAgentTrainer():
     def get_target_act(self, obs):
         return self.p_debug['target_act'](obs[self.agent_index])
 
-    def update_q(self, t, obs_n, act_n, obs_next_n, target_act_next_n):
-        """Update critic network."""
-        obs, act, rew, obs_next, done = self.replay_buffer.sample_index(
-            self.replay_sample_index)
-
-        # train q network
-        target_q = 0.0
-        target_q_next = self.q_debug['target_q_values'](*(obs_next_n + target_act_next_n))
-        target_q += rew + self.hparams['gamma'] * (1.0 - done) * target_q_next
-        q_loss, q_loss_summary = self.q_train(*(obs_n + act_n + [target_q]))
-
-        self.summary_writer.add_summary(q_loss_summary, global_step=t)
-        self.q_update()  # update critic
-
-    def update_p(self, t, obs_n, target_act_next_n):
-        """Update policy network."""
-        p_loss, p_summary = self.p_train(*(obs_n + target_act_next_n))
-
-        self.summary_writer.add_summary(p_summary, global_step=t)
-        self.p_update()
-
-    def update(self, agents, t, savestuff):
+    def update(self, agents, t, episodenum, savestuff):
         """Pull from replay buffer and update policy and critic."""
         # replay buffer is not large enough
         if len(self.replay_buffer) < self.max_replay_buffer_len:
             return False
-        if not t % 100 == 0:  # only update every 100 steps
-            return False
+        # if not t % 100 == 0:  # only update every 100 steps
+        #     return False
 
         self.replay_sample_index = \
             self.replay_buffer.make_index(self.hparams['batch_size'])
@@ -305,12 +287,8 @@ class MADDPGAgentTrainer():
         p_loss, p_summary = self.p_train(*(obs_n + act_n))
 
         if savestuff:
-            self.summary_writer.add_summary(p_summary, global_step=t)
-            self.summary_writer.add_summary(q_loss_summary, global_step=t)
+            self.summary_writer.add_summary(p_summary, global_step=episodenum)
+            self.summary_writer.add_summary(q_loss_summary, global_step=episodenum)
         self.p_update()  # update policy
         self.q_update()  # update critic
-        # self.update_q(t, obs_n, act_n, obs_next_n, target_act_next_n)
-        # self.update_p(t, obs_n, target_act_next_n)
-        # please actually write things to file, summary_writer
-        self.summary_writer.flush()
         return True
