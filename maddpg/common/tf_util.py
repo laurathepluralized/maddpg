@@ -7,9 +7,9 @@ own modifications, and modifications made in
 https://github.com/sunshineclt/maddpg/blob/master/maddpg/common/tf_util.py,
 all of which are under the MIT license.
 """
-import os
 import collections
 import numpy as np
+import os
 import tensorflow as tf
 try:
     import lvdb as pdb  # noqa

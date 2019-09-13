@@ -25,8 +25,8 @@ def discount_with_dones(reward, dones, gamma):
     discounted = []
     r = 0
     for reward, done in zip(reward[::-1], dones[::-1]):
-        r = reward + gamma*r
-        r = r*(1.-done)
+        r = reward + gamma * r
+        r = r * (1. - done)
         discounted.append(r)
     return discounted[::-1]
 
@@ -36,7 +36,7 @@ def make_update_exp(vals, target_vals):
     for var, var_target in zip(sorted(vals, key=lambda v: v.name),
                                sorted(target_vals, key=lambda v: v.name)):
         expression.append(var_target.assign(
-            polyak * var_target + (1.0-polyak) * var))
+            polyak * var_target + (1.0 - polyak) * var))
     expression = tf.group(*expression)
     return U.function([], [], updates=[expression])
 
@@ -74,11 +74,10 @@ def p_train(make_obs_ph_n, act_space_n, p_index, p_func, q_func, optimizer,
         qfunc = q_func(q_input, 1, scope="q_func", reuse=True,
                        num_units=num_units)[:, 0]
         pg_loss = -tf.reduce_mean(qfunc)
-        loss = pg_loss + p_reg * 1e-3
-
         maximize_j_summary = tf.summary.scalar('pg_loss', pg_loss)
         p_loss_summary = tf.summary.scalar('p_loss', pg_loss + p_reg)
         p_cov_summary = tf.summary.scalar('p_cov', tf.reduce_mean(tf.square(act_pd.std)))
+        loss = pg_loss + p_reg * 1e-3
 
         optimize_expr, hist = U.minimize_and_clip(optimizer, loss, p_func_vars,
                                                   grad_norm_clipping,
@@ -121,7 +120,7 @@ def q_train(make_obs_ph_n, act_space_n, q_index, q_func, optimizer,
         # set up placeholders
         obs_ph_n = make_obs_ph_n
         act_ph_n = [act_pdtype_n[i].sample_placeholder(
-            [None], name="action"+str(i)) for i in range(len(act_space_n))]
+            [None], name="action" + str(i)) for i in range(len(act_space_n))]
         target_ph = tf.placeholder(tf.float32, [None], name="target")
 
         q_input = tf.concat(obs_ph_n + act_ph_n, 1)
@@ -181,8 +180,8 @@ class MADDPGAgentTrainer():
         self.hparams = hparams
         obs_ph_n = []
         for i in range(self.n):
-            obs_ph_n.append(U.BatchInput(obs_shape_n[i],
-                            name="observation" + str(i)).get())
+            obs_ph_n.append(U.BatchInput(
+                obs_shape_n[i], name="observation" + str(i)).get())
 
         # Create all the functions necessary to train the model
 
@@ -210,7 +209,7 @@ class MADDPGAgentTrainer():
             optimizer=tf.train.AdamOptimizer(learning_rate=hparams['learning_rate']),
             grad_norm_clipping=hparams['grad_norm_clipping'],
             local_q_func=local_q_func,
-            num_units=args.num_units,
+            num_units=args.num_units
         )
         # Create experience buffer
         self.replay_buffer = ReplayBuffer(hparams['replay_buffer_len'])
@@ -275,14 +274,14 @@ class MADDPGAgentTrainer():
             act_n.append(act)
         obs, act, rew, obs_next, done = self.replay_buffer.sample_index(index)
 
-        num_sample = 1
+        num_sample = 1.0
         target_q = 0.0
         for i in range(num_sample):
             target_act_next_n = \
                 [agents[i].p_debug['target_act'](obs_next_n[i]) for i in range(self.n)]
             target_q_next = self.q_debug['target_q_values'](*(obs_next_n + target_act_next_n))
             target_q += rew + self.hparams['gamma'] * (1.0 - done) * target_q_next
-        target_q /= num_sample
+        target_q /= float(num_sample)
         q_loss, q_loss_summary = self.q_train(*(obs_n + act_n + [target_q]))
         p_loss, p_summary = self.p_train(*(obs_n + act_n))
 
