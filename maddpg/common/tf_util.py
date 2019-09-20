@@ -15,7 +15,6 @@ try:
     import lvdb as pdb  # noqa
 except ImportError:
     import ipdb as pdb
-import pysnooper
 
 def sum(x, axis=None, keepdims=False):
     return tf.reduce_sum(x, axis=None if axis is None else [axis], keep_dims = keepdims)

@@ -171,7 +171,7 @@ class MADDPGAgentTrainer():
     https://github.com/sunshineclt/maddpg/blob/master/maddpg/trainer/maddpg.py.
     """
     def __init__(self, name, model_value, model_policy, obs_shape_n,
-                 act_space_n, agent_index, args, hparams, summary_writer,
+                 act_space_n, agent_index, args, hparams, summary_writer=None,
                  local_q_func=False):
         self.name = name
         self.n = len(obs_shape_n)
@@ -285,7 +285,7 @@ class MADDPGAgentTrainer():
         q_loss, q_loss_summary = self.q_train(*(obs_n + act_n + [target_q]))
         p_loss, p_summary = self.p_train(*(obs_n + act_n))
 
-        if savestuff:
+        if savestuff and self.summary_writer is not None:
             self.summary_writer.add_summary(p_summary, global_step=episodenum)
             self.summary_writer.add_summary(q_loss_summary, global_step=episodenum)
         self.p_update()  # update policy

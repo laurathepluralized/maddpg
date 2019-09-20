@@ -72,10 +72,10 @@ def make_env(scenario_name, arglist, benchmark=False):
     world = scenario.make_world()
     # create multiagent environment
     if benchmark:
-        env = MultiAgentEnv(world, scenario.reset_world, scenario.reward, 
+        env = MultiAgentEnv(world, scenario.reset_world, scenario.reward,
                             scenario.observation, scenario.benchmark_data)
     else:
-        env = MultiAgentEnv(world, scenario.reset_world, scenario.reward, 
+        env = MultiAgentEnv(world, scenario.reset_world, scenario.reward,
                             scenario.observation)
     return env
 
@@ -83,14 +83,20 @@ def get_trainers(env, num_adversaries, obs_shape_n, arglist):
     trainers = []
     model = mlp_model
     trainer = MADDPGAgentTrainer
+    hparams = {'replay_buffer_len': 1000000,
+               'learning_rate': 0.001,
+               'batch_size': 1024,
+               'gamma': 0.95,
+               'save_rate': 1000,
+               'grad_norm_clipping': 0.5}
     for i in range(num_adversaries):
         trainers.append(trainer(
-            "agent_%d" % i, model, obs_shape_n, env.action_space, i, arglist,
-            local_q_func=(arglist.adv_policy=='ddpg')))
+            "agent_%d" % i, model, model, obs_shape_n, env.action_space, i, arglist,
+            hparams, local_q_func=(arglist.adv_policy=='ddpg')))
     for i in range(num_adversaries, env.n):
         trainers.append(trainer(
-            "agent_%d" % i, model, obs_shape_n, env.action_space, i, arglist,
-            local_q_func=(arglist.good_policy=='ddpg')))
+            "agent_%d" % i, model, model, obs_shape_n, env.action_space, i, arglist,
+            hparams, local_q_func=(arglist.good_policy=='ddpg')))
     return trainers
 
 
