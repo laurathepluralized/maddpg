@@ -226,7 +226,7 @@ class MADDPGAgentTrainer():
         theac = self.act(obs[None])[0]
         # print("p", self.p_debug["p_values"](obs[None])[0])
         # print("act", self.act(obs[None])[0])
-        if np.isnan(theac):
+        if any(np.isnan(theac)):
             print('NaN action in MADDPGAgentTrainer')
             pdb.set_trace()
             print('NaN action in MADDPGAgentTrainer')
