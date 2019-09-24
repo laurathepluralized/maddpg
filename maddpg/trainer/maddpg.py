@@ -255,9 +255,9 @@ class MADDPGAgentTrainer():
         """Pull from replay buffer and update policy and critic."""
         # replay buffer is not large enough
         if len(self.replay_buffer) < self.max_replay_buffer_len:
-            return False
+            return False, []
         # if not t % 100 == 0:  # only update every 100 steps
-        #     return False
+        #     return False, []
 
         self.replay_sample_index = \
             self.replay_buffer.make_index(self.hparams['batch_size'])
@@ -274,7 +274,8 @@ class MADDPGAgentTrainer():
             act_n.append(act)
         obs, act, rew, obs_next, done = self.replay_buffer.sample_index(index)
 
-        num_sample = 1.0
+        # train Q-function network
+        num_sample = 1
         target_q = 0.0
         for i in range(num_sample):
             target_act_next_n = \
@@ -283,6 +284,8 @@ class MADDPGAgentTrainer():
             target_q += rew + self.hparams['gamma'] * (1.0 - done) * target_q_next
         target_q /= float(num_sample)
         q_loss, q_loss_summary = self.q_train(*(obs_n + act_n + [target_q]))
+
+        # train policy network
         p_loss, p_summary = self.p_train(*(obs_n + act_n))
 
         if savestuff and self.summary_writer is not None:
@@ -290,4 +293,5 @@ class MADDPGAgentTrainer():
             self.summary_writer.add_summary(q_loss_summary, global_step=episodenum)
         self.p_update()  # update policy
         self.q_update()  # update critic
-        return True
+        return True, [q_loss, p_loss, np.mean(target_q), np.mean(rew),
+                      np.mean(target_q_next), np.std(target_q)]
