@@ -171,9 +171,10 @@ class MADDPGAgentTrainer():
     https://github.com/sunshineclt/maddpg/blob/master/maddpg/trainer/maddpg.py.
     """
     def __init__(self, name, model_value, model_policy, obs_shape_n,
-                 act_space_n, agent_index, args, hparams, summary_writer=None,
-                 local_q_func=False):
+                 act_space_n, agent_index, args, hparams,
+                 summary_writer=None, local_q_func=False, rngseed=None):
         self.name = name
+        self.rngseed = rngseed
         self.n = len(obs_shape_n)
         self.agent_index = agent_index
         self.args = args
@@ -212,7 +213,7 @@ class MADDPGAgentTrainer():
             num_units=args.num_units
         )
         # Create experience buffer
-        self.replay_buffer = ReplayBuffer(hparams['replay_buffer_len'])
+        self.replay_buffer = ReplayBuffer(hparams['replay_buffer_len'], self.rngseed)
         try:
             if hparams['test_saving']:
                 self.max_replay_buffer_len = 100

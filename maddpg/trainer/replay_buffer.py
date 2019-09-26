@@ -2,7 +2,7 @@ import numpy as np
 import random
 
 class ReplayBuffer(object):
-    def __init__(self, size):
+    def __init__(self, size, rngseed):
         """Create Prioritized Replay buffer.
 
         Parameters
@@ -14,6 +14,9 @@ class ReplayBuffer(object):
         self._storage = []
         self._maxsize = int(size)
         self._next_idx = 0
+        self._rngseed = rngseed
+        self._rng = random.Random(self._rngseed)
+        self._nprng = np.random.seed(self._rngseed)
 
     def __len__(self):
         return len(self._storage)
@@ -45,11 +48,11 @@ class ReplayBuffer(object):
             np.array(obses_tp1), np.array(dones)
 
     def make_index(self, batch_size):
-        return [random.randint(0, len(self._storage) - 1) for _ in range(batch_size)]
+        return [self._rng.randint(0, len(self._storage) - 1) for _ in range(batch_size)]
 
     def make_latest_index(self, batch_size):
         idx = [(self._next_idx - 1 - i) % self._maxsize for i in range(batch_size)]
-        np.random.shuffle(idx)
+        self._nprng.shuffle(idx)
         return idx
 
     def sample_index(self, idxes):
