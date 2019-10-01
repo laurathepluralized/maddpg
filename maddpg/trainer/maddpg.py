@@ -299,7 +299,7 @@ class MADDPGAgentTrainer():
             pdb.set_trace()
             print('Huge policy loss! Seed was {}'.format(self.args.seed))
 
-        if savestuff and self.summary_writer is not None:
+        if self.summary_writer is not None:
             self.summary_writer.add_summary(p_summary, global_step=episodenum)
             self.summary_writer.add_summary(q_loss_summary, global_step=episodenum)
         self.p_update()  # update policy
