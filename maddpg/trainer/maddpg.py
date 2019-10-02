@@ -257,8 +257,8 @@ class MADDPGAgentTrainer():
         # replay buffer is not large enough
         if len(self.replay_buffer) < self.max_replay_buffer_len:
             return False, []
-        if not t % 100 == 0:  # only update every 100 steps
-            return False, []
+        # if not t % 100 == 0:  # only update every 100 steps
+        #     return False, []
 
         self.replay_sample_index = \
             self.replay_buffer.make_index(self.hparams['batch_size'])
