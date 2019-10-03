@@ -287,17 +287,17 @@ class MADDPGAgentTrainer():
         q_loss, q_loss_summary = self.q_train(*(obs_n + act_n + [target_q]))
 
         if q_loss > 10000000:
-            print('Huge Q loss! Seed was {}'.format(self.args.seed))
+            print('Huge Q loss! Seed was {}'.format(self.rngseed))
             pdb.set_trace()
-            print('Huge Q loss! Seed was {}'.format(self.args.seed))
+            print('Huge Q loss! Seed was {}'.format(self.rngseed))
 
         # train policy network
         p_loss, p_summary = self.p_train(*(obs_n + act_n))
 
         if p_loss > 10000000:
-            print('Huge policy loss! Seed was {}'.format(self.args.seed))
+            print('Huge policy loss! Seed was {}'.format(self.rngseed))
             pdb.set_trace()
-            print('Huge policy loss! Seed was {}'.format(self.args.seed))
+            print('Huge policy loss! Seed was {}'.format(self.rngseed))
 
         if self.summary_writer is not None:
             self.summary_writer.add_summary(p_summary, global_step=episodenum)
