@@ -252,13 +252,13 @@ class MADDPGAgentTrainer():
     def get_target_act(self, obs):
         return self.p_debug['target_act'](obs[self.agent_index])
 
-    def update(self, agents, t, episodenum, savestuff):
+    def update(self, agents, t, episodenum, savestuff=False):
         """Pull from replay buffer and update policy and critic."""
         # replay buffer is not large enough
         if len(self.replay_buffer) < self.max_replay_buffer_len:
             return False, []
-        # if not t % 100 == 0:  # only update every 100 steps
-        #     return False, []
+        if not t % 100 == 0:  # only update every 100 steps
+            return False, []
 
         self.replay_sample_index = \
             self.replay_buffer.make_index(self.hparams['batch_size'])
@@ -299,7 +299,7 @@ class MADDPGAgentTrainer():
             pdb.set_trace()
             print('Huge policy loss! Seed was {}'.format(self.rngseed))
 
-        if self.summary_writer is not None:
+        if self.summary_writer is not None and savestuff:
             self.summary_writer.add_summary(p_summary, global_step=episodenum)
             self.summary_writer.add_summary(q_loss_summary, global_step=episodenum)
         self.p_update()  # update policy
